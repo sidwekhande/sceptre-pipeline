@@ -138,18 +138,31 @@ process prepare_assign_grnas {
   path "sceptre_object_fp"
   path "response_odm_fp"
   path "grna_odm_fp"
+  val "grna_assignment_formula_supplied"
 
   output:
   path "grna_to_pod_map.rds", emit: grna_to_pod_map_ch
   path "grna_pods.txt", emit: grna_pods_ch
-  path "low_moi.txt", emit: low_moi_ch
+  path "grna_assignment_args.rds", emit: grna_assignment_args_ch
+  path "grna_assignment_method.txt", emit: grna_assignment_method_ch
+  path "grna_assignment_formula_in_use.txt", emit: grna_assignment_formula_in_use_ch
+  path "grna_assignment_warning.txt", emit: grna_assignment_warning_ch
 
   """
   output_grna_info.R $sceptre_object_fp \
   $response_odm_fp \
   $grna_odm_fp \
   ${params.grna_pod_size} \
-  ${params.trial}
+  ${params.trial} \
+  ${params.grna_assignment_method} \
+  ${params.threshold} \
+  ${params.umi_fraction_threshold} \
+  ${params.min_grna_n_umis_threshold} \
+  ${params.n_em_rep} \
+  ${params.n_nonzero_cells_cutoff} \
+  ${params.backup_threshold} \
+  ${params.probability_threshold} \
+  $grna_assignment_formula_supplied
   """
 }
 
@@ -159,10 +172,7 @@ process assign_grnas {
   memory params.assign_grnas_memory
 
   when:
-  !(params.grna_assignment_method == "maximum" || (low_moi == "true" && params.grna_assignment_method == "default"))
-  
-  //when:
-  //params.grna_assignment_method != "maximum"
+  grna_assignment_method != "maximum"
   
   input:
   path "sceptre_object_fp"
@@ -170,7 +180,8 @@ process assign_grnas {
   path "grna_odm_fp"
   path "grna_to_pod_map"
   val "grna_pod"
-  val "low_moi"
+  val "grna_assignment_method"
+  path "grna_assignment_args"
   path "grna_assignment_formula"
 
   output:
@@ -183,12 +194,7 @@ process assign_grnas {
   $grna_odm_fp \
   $grna_to_pod_map \
   $grna_pod \
-  ${params.grna_assignment_method} \
-  ${params.threshold} \
-  ${params.n_em_rep} \
-  ${params.n_nonzero_cells_cutoff} \
-  ${params.backup_threshold} \
-  ${params.probability_threshold} \
+  $grna_assignment_args \
   $grna_assignment_formula
   """
 }
@@ -199,14 +205,10 @@ process dummy_assign_grnas {
   memory "1GB"
   
   when:
-  params.grna_assignment_method == "maximum" || (low_moi == "true" && params.grna_assignment_method == "default")
-  
-  //when:
-  //params.grna_assignment_method == "maximum"
+  grna_assignment_method == "maximum"
 
   input:
-  path "sceptre_object_fp"
-  val "low_moi"
+  val "grna_assignment_method"
 
   output:
   path "grna_assignments.rds", emit: grna_assignments_ch
@@ -232,6 +234,7 @@ process combine_assign_grnas {
   path "sceptre_object_fp"
   path "response_odm_fp"
   path "grna_odm_fp"
+  path "grna_assignment_args"
   path "grna_assignment_formula"
   path "grna_assignments"
 
@@ -246,9 +249,7 @@ process combine_assign_grnas {
   process_grna_assignments.R $sceptre_object_fp \
   $response_odm_fp \
   $grna_odm_fp \
-  ${params.grna_assignment_method} \
-  ${params.umi_fraction_threshold} \
-  ${params.min_grna_n_umis_threshold} \
+  $grna_assignment_args \
   $grna_assignment_formula \
   grna_assignments*
   """
@@ -421,13 +422,27 @@ workflow {
   prepare_assign_grnas(
     set_analysis_parameters.out.sceptre_object_ch.first(),
     Channel.fromPath(params.response_odm_fp, checkIfExists : true),
-    Channel.fromPath(params.grna_odm_fp, checkIfExists : true)
+    Channel.fromPath(params.grna_odm_fp, checkIfExists : true),
+    params.grna_assignment_formula != "${baseDir}/resources/placeholder_file.rds"
   )
 
   // 3. process output from above process
   grna_to_pod_map_ch = prepare_assign_grnas.out.grna_to_pod_map_ch.first()
   grna_pods_ch = prepare_assign_grnas.out.grna_pods_ch.splitText().map{it.trim()}
-  low_moi_ch = prepare_assign_grnas.out.low_moi_ch.splitText().map{it.trim()}.first()
+  grna_assignment_args_ch = prepare_assign_grnas.out.grna_assignment_args_ch.first()
+  grna_assignment_method_ch = prepare_assign_grnas.out.grna_assignment_method_ch.splitText().map{it.trim()}.first()
+  grna_assignment_formula_in_use_ch = prepare_assign_grnas.out.grna_assignment_formula_in_use_ch.splitText().map{it.trim() == "true"}.first()
+  grna_assignment_formula_input_ch = grna_assignment_formula_in_use_ch.map{in_use ->
+    file(
+      in_use ? params.grna_assignment_formula : "${baseDir}/resources/placeholder_file.rds",
+      checkIfExists : true
+    )
+  }
+  prepare_assign_grnas.out.grna_assignment_warning_ch
+    .splitText()
+    .map{it.trim()}
+    .filter{it}
+    .subscribe{log.warn(it)}
 
   // 4. assign gRNAs
   assign_grnas(
@@ -436,12 +451,12 @@ workflow {
     Channel.fromPath(params.grna_odm_fp).first(),
     grna_to_pod_map_ch,
     grna_pods_ch,
-    low_moi_ch,
-    Channel.fromPath(params.grna_assignment_formula).first()
+    grna_assignment_method_ch,
+    grna_assignment_args_ch,
+    grna_assignment_formula_input_ch
   )
   dummy_assign_grnas(
-    set_analysis_parameters.out.sceptre_object_ch.first(),
-    low_moi_ch
+    grna_assignment_method_ch
   )
   
   // 5. process output from above process
@@ -453,6 +468,7 @@ workflow {
     set_analysis_parameters.out.sceptre_object_ch.first(),
     Channel.fromPath(params.response_odm_fp).first(),
     Channel.fromPath(params.grna_odm_fp).first(),
+    grna_assignment_args_ch,
     grna_assignment_formula_ch,
     grna_assignments_ch
   )
