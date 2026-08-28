@@ -65,11 +65,15 @@ if (analysis_type == "run_calibration_check") {
 }
 
 # save the outputs
-if (analysis_type == "run_discovery_analysis") {
-  saveRDS(NULL, "sceptre_object.rds")
-} else {
-  saveRDS(sceptre_object, "sceptre_object.rds")
-}
+#
+# Previously, the discovery-analysis branch wrote saveRDS(NULL, ...) here, since nothing
+# downstream in main.nf's DAG consumes this subworkflow's output object -- discovery is the last
+# stage. That discarded the only fully-analyzed sceptre_object (assigned gRNAs, QC applied,
+# discovery_result attached) the pipeline ever produces; consumers that need the finished object
+# (e.g. downstream power analysis tooling) had no way to get it without hand-reconstructing it
+# from results_run_discovery_analysis.rds and the pre-discovery object. Saving it here costs one
+# more serialization per run and makes every sceptre_object.rds this pipeline writes meaningful.
+saveRDS(sceptre_object, "sceptre_object.rds")
 saveRDS(result_df, paste0("results_", analysis_type, ".rds"))
 ggplot2::ggsave(filename = paste0("plot_", analysis_type, ".png"), plot = p,
                 device = "png", scale = 1.1, width = 5, height = 4, dpi = 330)

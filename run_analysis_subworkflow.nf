@@ -32,6 +32,12 @@ process combine_association_analysis {
   publishDir "${params.output_directory}", mode: 'copy', overwrite: true, pattern: "*.png"
   publishDir "${params.output_directory}", mode: 'copy', overwrite: true, pattern: "*.txt"
   publishDir "${params.output_directory}", mode: 'copy', overwrite: true, pattern: "results_*"
+  // This process runs once per subworkflow (calibration_check, power_check, discovery_analysis),
+  // chained in that order, and each publishes to the same output_directory with overwrite: true --
+  // same pattern already used for analysis_summary.txt and the plots above. So after a full run,
+  // whichever object is here is the discovery-analysis one: assigned gRNAs, QC applied, and
+  // discovery_result attached -- the only fully-analyzed sceptre_object the pipeline produces.
+  publishDir "${params.output_directory}", mode: 'copy', overwrite: true, pattern: "sceptre_object.rds"
   
   time params.combine_association_analysis_time
   memory params.combine_association_analysis_memory
