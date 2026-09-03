@@ -17,13 +17,15 @@ sceptre_object@functs_called[[analysis_type]] <- TRUE
 sceptre_object@last_function_called <- analysis_type
 
 # 3. prune the pairs_with_info fields of the sceptre_object
+#
+# The discovery-analysis branch used to also prune @discovery_pairs_with_info and
+# @covariate_matrix here. Both are read directly by downstream power-analysis tooling (see
+# check_sceptre_api.R's required_slots in element-gene-power-analysis), and this is the
+# object that tooling ends up consuming -- see the note in run_qc.R for the same reasoning.
 if (analysis_type == "run_calibration_check") {
   sceptre_object@negative_control_pairs <- data.frame()
 } else if (analysis_type == "run_power_check") {
   sceptre_object@positive_control_pairs_with_info <- data.frame()
-} else { # discovery analysis
-  sceptre_object@discovery_pairs_with_info <- data.frame()
-  sceptre_object@covariate_matrix <- matrix()
 }
 gc() |> invisible()
 
