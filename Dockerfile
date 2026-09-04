@@ -24,8 +24,4 @@ ENV SCEPTRE_REF=${SCEPTRE_REF}
 
 RUN R -e 'remotes::install_github("timothy-barry/ondisc", ref = Sys.getenv("ONDISC_REF"), upgrade = "never")'
 RUN R -e 'remotes::install_github("katsevich-lab/sceptre", ref = Sys.getenv("SCEPTRE_REF"), upgrade = "never")'
-RUN R -e '
-library(sceptre); library(ondisc); library(data.table); library(dplyr); library(ggplot2); library(arrow)
-cat("sceptre:", as.character(packageVersion("sceptre")), "\n")
-cat("ondisc:  ", as.character(packageVersion("ondisc")), "\n")
-'
+RUN R -e 'library(sceptre); library(ondisc); library(data.table); library(dplyr); library(ggplot2); library(arrow); cat("sceptre:", as.character(packageVersion("sceptre")), "\nondisc: ", as.character(packageVersion("ondisc")), "\n")'
