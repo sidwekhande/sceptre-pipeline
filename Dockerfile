@@ -1,12 +1,7 @@
 FROM rocker/r-ver:4.2.2
 
-# This pipeline has no environment definition of its own -- bin/*.R just assumes sceptre, ondisc,
-# and the R packages below are already on PATH. It works wherever that happens to already be true
-# (e.g. a pre-built HPC environment) and cannot run in an isolated container -- like a Google Batch
-# task on Seqera Platform -- without one. This Dockerfile is that environment.
-#
-# rocker/r-ver ships Debian's reference BLAS/LAPACK, which is dramatically slower than an optimized
-# BLAS for the GLM-fitting and resampling work sceptre does per pair -- switched to OpenBLAS below.
+# Environment for running this pipeline in a container (e.g. Google Batch on Seqera), since it has
+# none of its own -- see the PR description for details, including why OpenBLAS is switched in below.
 
 ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -20,15 +15,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN R -e 'install.packages(c("remotes","data.table","dplyr","ggplot2","arrow","BiocManager"), repos="https://cloud.r-project.org")'
 RUN R -e 'BiocManager::install("rhdf5lib", update = FALSE, ask = FALSE)'
 
-# Pinned explicitly, as build args with defaults, rather than left to install_github()'s own
-# default of "whatever is on the default branch HEAD *at build time*". Without an explicit `ref`,
-# rebuilding this exact Dockerfile on two different days could silently install two different
-# sceptre versions -- neither pipeline nor sceptre itself would ever tell you that happened, and a
-# sceptre_object.rds produced under one version is not guaranteed to be readable, or to mean the
-# same thing statistically, under another (see check_sceptre_api.R in EngreitzLab's
-# element-gene-power-analysis for what that failure mode looks like when it's guarded against).
-# Override with --build-arg to test a different pin; the defaults are what this Dockerfile,
-# including the OpenBLAS switch above, was actually validated against.
+# Pinned explicitly as build args (override with --build-arg) rather than left to
+# install_github()'s default of tracking main's HEAD at build time -- see the PR description.
 ARG ONDISC_REF=58e851a95cfd381b316ac40ed4490e569bd40e2f
 ARG SCEPTRE_REF=e7866dd4bc158e4415588c4dde0a69da6ac93166
 ENV ONDISC_REF=${ONDISC_REF}

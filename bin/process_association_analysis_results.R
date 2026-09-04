@@ -18,10 +18,8 @@ sceptre_object@last_function_called <- analysis_type
 
 # 3. prune the pairs_with_info fields of the sceptre_object
 #
-# The discovery-analysis branch used to also prune @discovery_pairs_with_info and
-# @covariate_matrix here. Both are read directly by downstream power-analysis tooling (see
-# check_sceptre_api.R's required_slots in element-gene-power-analysis), and this is the
-# object that tooling ends up consuming -- see the note in run_qc.R for the same reasoning.
+# The discovery-analysis branch no longer prunes @discovery_pairs_with_info or @covariate_matrix
+# here, since downstream power-analysis tooling reads them directly -- see the PR description.
 if (analysis_type == "run_calibration_check") {
   sceptre_object@negative_control_pairs <- data.frame()
 } else if (analysis_type == "run_power_check") {
@@ -68,13 +66,8 @@ if (analysis_type == "run_calibration_check") {
 
 # save the outputs
 #
-# Previously, the discovery-analysis branch wrote saveRDS(NULL, ...) here, since nothing
-# downstream in main.nf's DAG consumes this subworkflow's output object -- discovery is the last
-# stage. That discarded the only fully-analyzed sceptre_object (assigned gRNAs, QC applied,
-# discovery_result attached) the pipeline ever produces; consumers that need the finished object
-# (e.g. downstream power analysis tooling) had no way to get it without hand-reconstructing it
-# from results_run_discovery_analysis.rds and the pre-discovery object. Saving it here costs one
-# more serialization per run and makes every sceptre_object.rds this pipeline writes meaningful.
+# The discovery-analysis branch used to write saveRDS(NULL, ...) here instead -- see the PR
+# description for why that's wrong and what it broke.
 saveRDS(sceptre_object, "sceptre_object.rds")
 saveRDS(result_df, paste0("results_", analysis_type, ".rds"))
 ggplot2::ggsave(filename = paste0("plot_", analysis_type, ".png"), plot = p,
