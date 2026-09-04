@@ -46,8 +46,11 @@ if (analysis_type == "run_calibration_check") {
   sceptre_object@discovery_result <- result_df
 }
 
-# 6. process the response precomputations (if using the complement set as the control group, and not running a discovery analysis)
-if (sceptre_object@control_group_complement && analysis_type != "run_discovery_analysis") {
+# 6. process the response precomputations (if using the complement set as the control group)
+#
+# No longer excludes run_discovery_analysis here -- see the PR description for why that silently
+# dropped valid precomputations for genes only tested in discovery pairs.
+if (sceptre_object@control_group_complement) {
   precomputation_list <- lapply(precomp_fps, readRDS) |> unlist(recursive = FALSE)
   sceptre_object@response_precomputations <- c(sceptre_object@response_precomputations, precomputation_list)
 }
