@@ -32,6 +32,13 @@ data_table_list <- list(calibration_check = sceptre_object@negative_control_pair
                         discovery_analysis = sceptre_object@discovery_pairs_with_info)
 
 # process each of the data tables
+#
+# Returned as a plain data.frame, not a data.table: sceptre_object's S4 slots for these fields
+# validate against data.frame, and while data.table inherits it (is(x, "data.frame") is TRUE),
+# the S4 slot-assignment validity check does not accept it -- confirmed by WattEG's
+# fit_null_models.R, the first caller to reassign one of these into a fresh sceptre_object, which
+# fails with "assignment of an object of class \"data.table\" is not valid for @'...'". Coercing
+# here, once, is cheaper than chasing the same failure at every future call site.
 process_pair_data_table <- function(data_table) {
   if (nrow(data_table) >= 1L) {
     data_table_pass_qc <- data_table[data_table$pass_qc,]
@@ -40,7 +47,7 @@ process_pair_data_table <- function(data_table) {
     data_table_fail_qc <- data_table[!data_table$pass_qc,] |> dplyr::mutate(pod = 1L)
     data_table <- data.table::rbindlist(list(data_table_pass_qc, data_table_fail_qc))
   }
-  return(data_table)
+  return(as.data.frame(data_table))
 }
 processed_data_table_list <- lapply(data_table_list, process_pair_data_table)
 sceptre_object@negative_control_pairs <- processed_data_table_list$calibration_check

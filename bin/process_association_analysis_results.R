@@ -37,6 +37,10 @@ process_funct <- switch(analysis_type,
 result_df <- process_funct(result_df, sceptre_object)
 result_df$pod <- NULL
 
+# Plain data.frame, not data.table: same reasoning as prepare_association_analyses.R's
+# process_pair_data_table() -- sceptre_object's result slots reject a data.table at assignment.
+result_df <- as.data.frame(result_df)
+
 # 5. add results to the sceptre_object
 if (analysis_type == "run_calibration_check") {
   sceptre_object@calibration_result <- result_df
