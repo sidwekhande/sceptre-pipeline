@@ -55,6 +55,13 @@ if (identical(formula_object, NULL)) {
 }
 
 # discovery_pairs
+#
+# Subset to just grna_target/response_id -- set_analysis_parameters()/run_qc() only ever use
+# these two, and any extra decorative column (e.g. gene_symbol) that differs between
+# discovery_pairs and positive_control_pairs makes sceptre's internal rbind() of the two crash
+# with an unhelpful "numbers of columns of arguments do not match" deep inside
+# compute_pairwise_qc_information, rather than a message naming the actual mismatch.
+required_pair_cols <- c("grna_target", "response_id")
 discovery_pairs <- readRDS(discovery_pairs)
 nuclear <- identical(discovery_pairs, "trans")
 if (nuclear) {
@@ -63,6 +70,7 @@ if (nuclear) {
   if (identical(discovery_pairs, NULL)) {
     discovery_pairs <- sceptre_object@discovery_pairs
   }
+  discovery_pairs <- discovery_pairs[, required_pair_cols]
   if (trial) {
     n_pairs <- nrow(discovery_pairs)
     discovery_pairs <- discovery_pairs |> dplyr::sample_n(min(100, n_pairs))
@@ -77,6 +85,7 @@ if (nuclear) {
   if (identical(positive_control_pairs, NULL)) {
     positive_control_pairs <- sceptre_object@positive_control_pairs
   }
+  positive_control_pairs <- positive_control_pairs[, required_pair_cols]
   if (trial) {
     n_pairs <- nrow(positive_control_pairs)
     positive_control_pairs <- positive_control_pairs |> dplyr::sample_n(min(100, n_pairs))
