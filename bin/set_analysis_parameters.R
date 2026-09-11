@@ -14,9 +14,10 @@ resampling_mechanism <- args[8]
 multiple_testing_method <- args[9]
 multiple_testing_alpha <- args[10]
 formula_object_fp <- args[11]
-discovery_pairs <- args[12]
-positive_control_pairs <- args[13]
+discovery_pairs_fp <- args[12]
+positive_control_pairs_fp <- args[13]
 trial <- as.logical(args[14])
+nuclear <- as.logical(args[15])
 
 # load the sceptre object
 sceptre_object <- sceptre::read_ondisc_backed_sceptre_object(sceptre_object_fp = sceptre_object_fp,
@@ -54,20 +55,26 @@ if (identical(formula_object, NULL)) {
   formula_object <- sceptre_object@formula_object
 }
 
-# discovery_pairs
+# discovery_pairs / positive_control_pairs
 #
 # Subset to just grna_target/response_id -- set_analysis_parameters()/run_qc() only ever use
 # these two, and any extra decorative column (e.g. gene_symbol) that differs between
 # discovery_pairs and positive_control_pairs makes sceptre's internal rbind() of the two crash
 # with an unhelpful "numbers of columns of arguments do not match" deep inside
 # compute_pairwise_qc_information, rather than a message naming the actual mismatch.
+#
+# discovery_pairs/positive_control_pairs are TSVs; an empty (header-only) TSV means "not
+# supplied, fall back to what's already on the sceptre object". "nuclear" (trans/genome-wide
+# mode) is now passed in explicitly rather than sniffed from the file content, since a TSV can't
+# carry the old RDS placeholder's "the whole value is the string 'trans'" sentinel.
 required_pair_cols <- c("grna_target", "response_id")
-discovery_pairs <- readRDS(discovery_pairs)
-nuclear <- identical(discovery_pairs, "trans")
+read_pairs_tsv <- function(fp) data.table::fread(fp, colClasses = "character") |> as.data.frame()
+
+discovery_pairs <- read_pairs_tsv(discovery_pairs_fp)
 if (nuclear) {
   discovery_pairs <- data.frame(grna_target = character(0), response_id = character(0))
 } else {
-  if (identical(discovery_pairs, NULL)) {
+  if (nrow(discovery_pairs) == 0) {
     discovery_pairs <- sceptre_object@discovery_pairs
   }
   discovery_pairs <- discovery_pairs[, required_pair_cols]
@@ -81,8 +88,8 @@ if (nuclear) {
 if (nuclear) {
   positive_control_pairs <- data.frame(grna_target = character(0), response_id = character(0))
 } else {
-  positive_control_pairs <- readRDS(positive_control_pairs)
-  if (identical(positive_control_pairs, NULL)) {
+  positive_control_pairs <- read_pairs_tsv(positive_control_pairs_fp)
+  if (nrow(positive_control_pairs) == 0) {
     positive_control_pairs <- sceptre_object@positive_control_pairs
   }
   positive_control_pairs <- positive_control_pairs[, required_pair_cols]

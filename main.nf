@@ -7,6 +7,12 @@ nextflow.enable.dsl = 2
 // 1. pipeline meta params
 params.pipeline_stop = "run_discovery_analysis"
 params.trial = "false"
+// 1a. cell ranger import (optional upstream entry point -- builds sceptre_object/odm files
+// in-pipeline instead of requiring them to be pre-built and uploaded). Leave rna_directories
+// unset ("false") to use the direct sceptre_object_fp/response_odm_fp/grna_odm_fp upload path.
+params.rna_directories = "false" // comma-separated list of Cell Ranger output directories
+params.grna_target_tsv = "false" // finished grna_id/grna_target data frame (targeting + non-targeting gRNAs together)
+params.moi = "low"
 // 2. set analysis parameters
 params.side = "default"
 params.grna_integration_strategy = "default"
@@ -16,8 +22,8 @@ params.resampling_mechanism = "default"
 params.multiple_testing_method = "default"
 params.multiple_testing_alpha = "default"
 params.formula_object = "${baseDir}/resources/placeholder_file.rds"
-params.discovery_pairs = "${baseDir}/resources/placeholder_file.rds"
-params.positive_control_pairs = "${baseDir}/resources/placeholder_file.rds"
+params.discovery_pairs = "${baseDir}/resources/placeholder_pairs.tsv"
+params.positive_control_pairs = "${baseDir}/resources/placeholder_pairs.tsv"
 // 3. gRNA assignment
 params.grna_assignment_method = "default"
 params.threshold = "default"
@@ -43,6 +49,7 @@ params.calibration_group_size = "default"
 params.grna_pod_size = 150
 if ("$params.discovery_pairs" == "trans") params.pair_pod_size = 500000 else params.pair_pod_size = 25000
 // 7. computation: time
+params.import_sceptre_data_time = "30m" // import from cell ranger output
 params.set_analysis_parameters_time = "15m" // set analysis parameters
 params.prepare_assign_grnas_time = "15m" // prepare grna assignments
 params.assign_grnas_time_per_grna = "2s" // assign grnas
@@ -52,6 +59,7 @@ params.prepare_association_analysis_time = "15m" // prepare association analyses
 params.run_association_analysis_time_per_pair = "0.05s" // run association analysis
 params.combine_association_analysis_time = "15m" // process association analysis
 // 8. computation: memory
+params.import_sceptre_data_memory = "8GB" // import from cell ranger output
 params.set_analysis_parameters_memory = "4GB" // set analysis parameters
 params.prepare_assign_grnas_memory = "4GB" // prepare grna assignments
 params.assign_grnas_memory = "4GB" // assign grnas
@@ -85,13 +93,41 @@ if ("$params.trial" == "true") {
 disc_pairs = params.discovery_pairs
 nuclear = false
 if ("$params.discovery_pairs" == "trans") {
-  disc_pairs = "${baseDir}/resources/trans_placeholder.rds"
+  disc_pairs = "${baseDir}/resources/placeholder_pairs.tsv"
   nuclear = true
 }
+
+// whether to build the sceptre_object/odm files in-pipeline from raw cell ranger output,
+// rather than requiring them pre-built and uploaded via sceptre_object_fp/response_odm_fp/grna_odm_fp
+use_new_import = params.rna_directories != "false"
 
 /**********
 * PROCESSES
 **********/
+// PROCESS 0: import data from cell ranger output (odm-backed)
+process import_sceptre_data {
+  time params.import_sceptre_data_time
+  memory params.import_sceptre_data_memory
+
+  input:
+  path rna_directories, stageAs: "cellranger_dir_*"
+  path "grna_target_tsv"
+  val "moi"
+
+  output:
+  path "sceptre_object.rds", emit: sceptre_object_ch
+  path "gene.odm", emit: response_odm_ch
+  path "grna.odm", emit: grna_odm_ch
+
+  """
+  import_sceptre_data.R \
+  ${params.trial} \
+  $moi \
+  grna_target_tsv \
+  cellranger_dir_*
+  """
+}
+
 // PROCESS A: set analysis parameters
 process set_analysis_parameters {
   publishDir "${params.output_directory}", mode: 'copy', overwrite: true, pattern: "*.txt"
@@ -106,6 +142,7 @@ process set_analysis_parameters {
   path "formula_object"
   path "discovery_pairs"
   path "positive_control_pairs"
+  val "nuclear"
 
   output:
   path "sceptre_object.rds", emit: sceptre_object_ch
@@ -125,7 +162,8 @@ process set_analysis_parameters {
   $formula_object \
   $discovery_pairs \
   $positive_control_pairs \
-  ${params.trial}
+  ${params.trial} \
+  $nuclear
   """
 }
 
@@ -405,15 +443,36 @@ process run_discovery_analysis_trans {
 * MAIN WORKFLOW
 ***************/
 workflow {
+  // -1. optionally import raw cell ranger output into an odm-backed sceptre_object/gene.odm/grna.odm,
+  // instead of requiring those three to be pre-built and uploaded
+  if (use_new_import) {
+    rna_dirs_ch = Channel.fromList(params.rna_directories.split(',') as List)
+      .map { file(it, type: 'dir', checkIfExists: true) }
+      .collect()
+    import_sceptre_data(
+      rna_dirs_ch,
+      Channel.fromPath(params.grna_target_tsv, checkIfExists: true),
+      params.moi
+    )
+    sceptre_object_input_ch = import_sceptre_data.out.sceptre_object_ch
+    response_odm_input_ch   = import_sceptre_data.out.response_odm_ch
+    grna_odm_input_ch       = import_sceptre_data.out.grna_odm_ch
+  } else {
+    sceptre_object_input_ch = Channel.fromPath(params.sceptre_object_fp, checkIfExists: true)
+    response_odm_input_ch   = Channel.fromPath(params.response_odm_fp, checkIfExists: true)
+    grna_odm_input_ch       = Channel.fromPath(params.grna_odm_fp, checkIfExists: true)
+  }
+
   // 0. set analysis parameters
   if (step_rank >= 0) {
     set_analysis_parameters(
-      Channel.fromPath(params.sceptre_object_fp, checkIfExists : true),
-      Channel.fromPath(params.response_odm_fp, checkIfExists : true),
-      Channel.fromPath(params.grna_odm_fp, checkIfExists : true),
+      sceptre_object_input_ch,
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
       Channel.fromPath(params.formula_object, checkIfExists : true),
       Channel.fromPath(disc_pairs, checkIfExists : true),
-      Channel.fromPath(params.positive_control_pairs, checkIfExists : true)
+      Channel.fromPath(params.positive_control_pairs, checkIfExists : true),
+      Channel.from(nuclear)
     )
   }
 
@@ -421,8 +480,8 @@ workflow {
   // 2. obtain the gRNA info
   prepare_assign_grnas(
     set_analysis_parameters.out.sceptre_object_ch.first(),
-    Channel.fromPath(params.response_odm_fp, checkIfExists : true),
-    Channel.fromPath(params.grna_odm_fp, checkIfExists : true),
+    response_odm_input_ch.first(),
+    grna_odm_input_ch.first(),
     params.grna_assignment_formula != "${baseDir}/resources/placeholder_file.rds"
   )
 
@@ -447,8 +506,8 @@ workflow {
   // 4. assign gRNAs
   assign_grnas(
     set_analysis_parameters.out.sceptre_object_ch.first(),
-    Channel.fromPath(params.response_odm_fp).first(),
-    Channel.fromPath(params.grna_odm_fp).first(),
+    response_odm_input_ch.first(),
+    grna_odm_input_ch.first(),
     grna_to_pod_map_ch,
     grna_pods_ch,
     grna_assignment_method_ch,
@@ -466,8 +525,8 @@ workflow {
   // 6. process the gRNA assignments
   combine_assign_grnas(
     set_analysis_parameters.out.sceptre_object_ch.first(),
-    Channel.fromPath(params.response_odm_fp).first(),
-    Channel.fromPath(params.grna_odm_fp).first(),
+    response_odm_input_ch.first(),
+    grna_odm_input_ch.first(),
     grna_assignment_args_ch,
     grna_assignment_formula_ch,
     grna_assignments_ch
@@ -479,8 +538,8 @@ workflow {
     // 7. run quality control
     run_qc(
       combine_assign_grnas.out.sceptre_object_ch,
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
     )
     }
 
@@ -488,8 +547,8 @@ workflow {
     // 8. prepare association analyses
     prepare_association_analysis(
       run_qc.out.sceptre_object_ch,
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first()
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first()
     )
 
     // 9. run calibration check
@@ -497,8 +556,8 @@ workflow {
     run_calibration_check_ch = prepare_association_analysis.out.run_calibration_check_ch.splitText().map{it.trim()}.first()
     run_analysis_subworkflow_calibration_check(
       prepare_association_analysis.out.sceptre_object_ch,
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
       calibration_check_pods_ch,
       run_calibration_check_ch,
       Channel.from("run_calibration_check").first()
@@ -511,8 +570,8 @@ workflow {
     run_power_check_ch = prepare_association_analysis.out.run_power_check_ch.splitText().map{it.trim()}.first()
     run_analysis_subworkflow_power_check(
       run_analysis_subworkflow_calibration_check.out.first(),
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
       power_check_pods_ch,
       run_power_check_ch,
       Channel.from("run_power_check").first()
@@ -525,8 +584,8 @@ workflow {
     run_discovery_analysis_ch = prepare_association_analysis.out.run_discovery_analysis_ch.splitText().map{it.trim()}.first()
     run_analysis_subworkflow_discovery_analysis(
       run_analysis_subworkflow_power_check.out.first(),
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
       discovery_analysis_pods_ch,
       run_discovery_analysis_ch,
       Channel.from("run_discovery_analysis").first()
@@ -537,8 +596,8 @@ workflow {
     // 7. run cellwise qc
     run_qc_trans(
       combine_assign_grnas.out.sceptre_object_ch,
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
     )
     }
 
@@ -546,8 +605,8 @@ workflow {
     // 8. prepare association analysis
     prepare_association_analysis_trans(
       run_qc_trans.out.sceptre_object_ch,
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
     )
     discovery_analysis_pods_ch = prepare_association_analysis_trans.out.discovery_analysis_pods_ch.splitText().map{it.trim()}
     response_to_pod_map_ch = prepare_association_analysis_trans.out.response_to_pod_map_ch
@@ -555,8 +614,8 @@ workflow {
     // 9. run association analysis
     run_discovery_analysis_trans(
       run_qc_trans.out.sceptre_object_ch,
-      Channel.fromPath(params.response_odm_fp).first(),
-      Channel.fromPath(params.grna_odm_fp).first(),
+      response_odm_input_ch.first(),
+      grna_odm_input_ch.first(),
       response_to_pod_map_ch,
       discovery_analysis_pods_ch
     )
