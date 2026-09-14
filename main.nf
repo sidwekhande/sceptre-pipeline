@@ -447,7 +447,7 @@ workflow {
   // instead of requiring those three to be pre-built and uploaded
   if (use_new_import) {
     rna_dirs_ch = Channel.fromList(params.rna_directories.split(',') as List)
-      .map { file(it, type: 'dir', checkIfExists: true) }
+      .map { file(it, type: 'dir') }
       .collect()
     import_sceptre_data(
       rna_dirs_ch,
