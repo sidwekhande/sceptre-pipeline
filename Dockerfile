@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     update-alternatives --set liblapack.so.3-x86_64-linux-gnu /usr/lib/x86_64-linux-gnu/openblas-pthread/liblapack.so.3 && \
     rm -rf /var/lib/apt/lists/*
 
-RUN R -e 'install.packages(c("remotes","data.table","dplyr","ggplot2","arrow","BiocManager"), repos="https://cloud.r-project.org")'
+RUN R -e 'install.packages(c("remotes","data.table","R.utils","dplyr","ggplot2","arrow","BiocManager"), repos="https://cloud.r-project.org")'
 RUN R -e 'BiocManager::install("rhdf5lib", update = FALSE, ask = FALSE)'
 
 # Pinned explicitly as build args (override with --build-arg) rather than left to
@@ -24,4 +24,4 @@ ENV SCEPTRE_REF=${SCEPTRE_REF}
 
 RUN R -e 'remotes::install_github("timothy-barry/ondisc", ref = Sys.getenv("ONDISC_REF"), upgrade = "never")'
 RUN R -e 'remotes::install_github("katsevich-lab/sceptre", ref = Sys.getenv("SCEPTRE_REF"), upgrade = "never")'
-RUN R -e 'library(sceptre); library(ondisc); library(data.table); library(dplyr); library(ggplot2); library(arrow); cat("sceptre:", as.character(packageVersion("sceptre")), "\nondisc: ", as.character(packageVersion("ondisc")), "\n")'
+RUN R -e 'library(sceptre); library(ondisc); library(data.table); library(R.utils); library(dplyr); library(ggplot2); library(arrow); cat("sceptre:", as.character(packageVersion("sceptre")), "\nondisc: ", as.character(packageVersion("ondisc")), "\n")'
