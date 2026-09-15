@@ -69,6 +69,7 @@ if (identical(formula_object, NULL)) {
 # carry the old RDS placeholder's "the whole value is the string 'trans'" sentinel.
 required_pair_cols <- c("grna_target", "response_id")
 read_pairs_tsv <- function(fp) data.table::fread(fp, colClasses = "character") |> as.data.frame()
+response_ids <- rownames(sceptre::get_response_matrix(sceptre_object))
 
 discovery_pairs <- read_pairs_tsv(discovery_pairs_fp)
 if (nuclear) {
@@ -78,9 +79,13 @@ if (nuclear) {
     discovery_pairs <- sceptre_object@discovery_pairs
   }
   discovery_pairs <- discovery_pairs[, required_pair_cols]
-  # discovery_pairs commonly names more candidate elements than ended up with guides in the
-  # final library (e.g. dropped during synthesis/QC); restrict to elements sceptre actually knows
-  discovery_pairs <- discovery_pairs[which(discovery_pairs$grna_target %in% sceptre_object@grna_target_data_frame$grna_target), ]
+  # discovery_pairs commonly names more candidate elements/genes than ended up with guides in
+  # the final library or in the response matrix's feature set (e.g. dropped during synthesis/QC,
+  # or genes filtered out of the Cell Ranger reference); restrict to what sceptre actually knows
+  discovery_pairs <- discovery_pairs[which(
+    discovery_pairs$grna_target %in% sceptre_object@grna_target_data_frame$grna_target &
+    discovery_pairs$response_id %in% response_ids
+  ), ]
   if (trial) {
     n_pairs <- nrow(discovery_pairs)
     discovery_pairs <- discovery_pairs |> dplyr::sample_n(min(100, n_pairs))
@@ -96,7 +101,10 @@ if (nuclear) {
     positive_control_pairs <- sceptre_object@positive_control_pairs
   }
   positive_control_pairs <- positive_control_pairs[, required_pair_cols]
-  positive_control_pairs <- positive_control_pairs[which(positive_control_pairs$grna_target %in% sceptre_object@grna_target_data_frame$grna_target), ]
+  positive_control_pairs <- positive_control_pairs[which(
+    positive_control_pairs$grna_target %in% sceptre_object@grna_target_data_frame$grna_target &
+    positive_control_pairs$response_id %in% response_ids
+  ), ]
   if (trial) {
     n_pairs <- nrow(positive_control_pairs)
     positive_control_pairs <- positive_control_pairs |> dplyr::sample_n(min(100, n_pairs))
@@ -108,11 +116,16 @@ if (nuclear) {
   multiple_testing_method <- "none"
 } else if (identical(multiple_testing_method, "default")) {
   multiple_testing_method <- sceptre_object@multiple_testing_method
+  # a freshly-imported object has never had set_analysis_parameters() called, so this slot is
+  # character(0) -- fall back to BH rather than silently passing an empty value through
+  if (length(multiple_testing_method) == 0) multiple_testing_method <- "BH"
 }
 
 # multiple_testing_alpha
 if (identical(multiple_testing_alpha, "default")) {
   multiple_testing_alpha <- sceptre_object@multiple_testing_alpha
+  # same fresh-object fallback as multiple_testing_method -- matches sceptre's own default
+  if (length(multiple_testing_alpha) == 0) multiple_testing_alpha <- 0.1
 } else {
   multiple_testing_alpha <- as.numeric(multiple_testing_alpha)
 }
