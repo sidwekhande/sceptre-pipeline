@@ -31,16 +31,16 @@ nextflow run timothy-barry/sceptre-pipeline -r main \
 ##########################################################################
 cellranger_dir_1=$data_directory"cellranger_out/sample_1"
 cellranger_dir_2=$data_directory"cellranger_out/sample_2"
-grna_target_tsv=$data_directory"grna_target.tsv"
+per_guide_metadata_tsv=$data_directory"per_guide_metadata.tsv"
 discovery_pairs_tsv=$data_directory"discovery_pairs.tsv"
-positive_control_pairs_tsv=$data_directory"positive_control_pairs.tsv"
 
+# positive_control_pairs is derived automatically from per_guide_metadata_tsv's
+# type == "positive control" rows -- no separate --positive_control_pairs needed here
 nextflow run timothy-barry/sceptre-pipeline -r main \
  --rna_directories "$cellranger_dir_1,$cellranger_dir_2" \
- --grna_target_tsv $grna_target_tsv \
+ --per_guide_metadata_tsv $per_guide_metadata_tsv \
  --moi high \
  --discovery_pairs $discovery_pairs_tsv \
- --positive_control_pairs $positive_control_pairs_tsv \
  --output_directory $output_directory \
  --grna_assignment_method mixture \
  --pair_pod_size 1000 \

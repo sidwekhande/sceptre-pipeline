@@ -11,7 +11,7 @@ params.trial = "false"
 // in-pipeline instead of requiring them to be pre-built and uploaded). Leave rna_directories
 // unset ("false") to use the direct sceptre_object_fp/response_odm_fp/grna_odm_fp upload path.
 params.rna_directories = "false" // comma-separated list of Cell Ranger output directories
-params.grna_target_tsv = "false" // finished grna_id/grna_target data frame (targeting + non-targeting gRNAs together)
+params.per_guide_metadata_tsv = "false" // IGVF-format per-guide metadata (guide_id, targeting, type, intended_target_name, ...); also used to derive positive_control_pairs
 params.moi = "low"
 // 2. set analysis parameters
 params.side = "default"
@@ -111,19 +111,20 @@ process import_sceptre_data {
 
   input:
   path rna_directories, stageAs: "cellranger_dir_*"
-  path "grna_target_tsv"
+  path "per_guide_metadata_tsv"
   val "moi"
 
   output:
   path "sceptre_object.rds", emit: sceptre_object_ch
   path "gene.odm", emit: response_odm_ch
   path "grna.odm", emit: grna_odm_ch
+  path "positive_control_pairs.tsv", emit: positive_control_pairs_ch
 
   """
   import_sceptre_data.R \
   ${params.trial} \
   $moi \
-  grna_target_tsv \
+  per_guide_metadata_tsv \
   cellranger_dir_*
   """
 }
@@ -451,16 +452,18 @@ workflow {
       .collect()
     import_sceptre_data(
       rna_dirs_ch,
-      Channel.fromPath(params.grna_target_tsv, checkIfExists: true),
+      Channel.fromPath(params.per_guide_metadata_tsv, checkIfExists: true),
       params.moi
     )
-    sceptre_object_input_ch = import_sceptre_data.out.sceptre_object_ch
-    response_odm_input_ch   = import_sceptre_data.out.response_odm_ch
-    grna_odm_input_ch       = import_sceptre_data.out.grna_odm_ch
+    sceptre_object_input_ch       = import_sceptre_data.out.sceptre_object_ch
+    response_odm_input_ch         = import_sceptre_data.out.response_odm_ch
+    grna_odm_input_ch             = import_sceptre_data.out.grna_odm_ch
+    positive_control_pairs_input_ch = import_sceptre_data.out.positive_control_pairs_ch
   } else {
-    sceptre_object_input_ch = Channel.fromPath(params.sceptre_object_fp, checkIfExists: true)
-    response_odm_input_ch   = Channel.fromPath(params.response_odm_fp, checkIfExists: true)
-    grna_odm_input_ch       = Channel.fromPath(params.grna_odm_fp, checkIfExists: true)
+    sceptre_object_input_ch       = Channel.fromPath(params.sceptre_object_fp, checkIfExists: true)
+    response_odm_input_ch         = Channel.fromPath(params.response_odm_fp, checkIfExists: true)
+    grna_odm_input_ch             = Channel.fromPath(params.grna_odm_fp, checkIfExists: true)
+    positive_control_pairs_input_ch = Channel.fromPath(params.positive_control_pairs, checkIfExists: true)
   }
 
   // 0. set analysis parameters
@@ -471,7 +474,7 @@ workflow {
       grna_odm_input_ch.first(),
       Channel.fromPath(params.formula_object, checkIfExists : true),
       Channel.fromPath(disc_pairs, checkIfExists : true),
-      Channel.fromPath(params.positive_control_pairs, checkIfExists : true),
+      positive_control_pairs_input_ch,
       Channel.from(nuclear)
     )
   }
