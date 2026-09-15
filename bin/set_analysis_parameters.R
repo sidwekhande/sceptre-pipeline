@@ -78,6 +78,9 @@ if (nuclear) {
     discovery_pairs <- sceptre_object@discovery_pairs
   }
   discovery_pairs <- discovery_pairs[, required_pair_cols]
+  # discovery_pairs commonly names more candidate elements than ended up with guides in the
+  # final library (e.g. dropped during synthesis/QC); restrict to elements sceptre actually knows
+  discovery_pairs <- discovery_pairs[which(discovery_pairs$grna_target %in% sceptre_object@grna_target_data_frame$grna_target), ]
   if (trial) {
     n_pairs <- nrow(discovery_pairs)
     discovery_pairs <- discovery_pairs |> dplyr::sample_n(min(100, n_pairs))
@@ -93,6 +96,7 @@ if (nuclear) {
     positive_control_pairs <- sceptre_object@positive_control_pairs
   }
   positive_control_pairs <- positive_control_pairs[, required_pair_cols]
+  positive_control_pairs <- positive_control_pairs[which(positive_control_pairs$grna_target %in% sceptre_object@grna_target_data_frame$grna_target), ]
   if (trial) {
     n_pairs <- nrow(positive_control_pairs)
     positive_control_pairs <- positive_control_pairs |> dplyr::sample_n(min(100, n_pairs))
